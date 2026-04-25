@@ -1,4 +1,5 @@
 import streamlit as st
+st.write("App is starting...") # This forces text to appear immediatelyimport streamlit as st
 import cv2
 from rembg import remove, new_session
 from PIL import Image, ImageDraw
