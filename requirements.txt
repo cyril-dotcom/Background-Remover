@@ -1,5 +1,5 @@
 streamlit==1.45.0
 opencv-python-headless==4.10.0.84
 rembg==2.0.57
-pillow==10.4.0
+pillow==11.0.0
 numpy==1.26.4
