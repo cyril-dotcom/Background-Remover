@@ -56,7 +56,7 @@ def process_frame(input_image, target_color, sens, d_strength, removal_method, s
         
         img_rgba = input_image.convert("RGBA")
         data = np.array(img_rgba)
-        data[:, :, 3] = mask_inv 
+        data[:, :, 3] = mask_inv
         no_bg = Image.fromarray(data)
     
     if use_transparent:
@@ -76,27 +76,29 @@ use_transparent = st.sidebar.checkbox("Transparent Background (Alpha)", value=Tr
 
 bg_fill_rgb = (0, 0, 0)
 if not use_transparent:
-    bg_fill_color = st.sidebar.color_picker("New Background Color", "#000000") 
+    bg_fill_color = st.sidebar.color_picker("New Background Color", "#000000")
     bg_fill_rgb = tuple(int(bg_fill_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
 
-# UPDATED: Mode name changed to "PNG Frames"
 mode = st.sidebar.radio("Output Mode", ["Video", "Photo", "PNG Frames"])
 
 # --- 7. File Uploader ---
 uploaded_file = st.file_uploader("Upload File", type=["mp4", "mov", "avi", "png", "jpg", "jpeg"])
 
 if uploaded_file is not None:
-    if 'picked_color' not in st.session_state: st.session_state.picked_color = (0, 255, 0)
+    if 'picked_color' not in st.session_state:
+        st.session_state.picked_color = (0, 255, 0)
     sensitivity = 50
     d_strength = 0.5
     current_session = get_ai_session(model_choice)
+    st.success("✅ AI Session Active")
 
     if removal_method == "Manual Color Key":
         st.subheader("🛠️ Keying Setup & Live Preview")
         if uploaded_file.type.startswith('image'):
             sample_img = Image.open(uploaded_file).convert("RGB")
         else:
-            with open("temp_sample.mp4", "wb") as f: f.write(uploaded_file.getvalue())
+            with open("temp_sample.mp4", "wb") as f:
+                f.write(uploaded_file.getvalue())
             v = cv2.VideoCapture("temp_sample.mp4")
             ret, frame = v.read()
             sample_img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
@@ -127,7 +129,7 @@ if uploaded_file is not None:
 
     st.divider()
     if st.button(f"🚀 Start {mode} Processing"):
-        
+
         if mode == "Photo":
             img = Image.open(uploaded_file).convert("RGB")
             final = process_frame(img, st.session_state.picked_color, sensitivity, d_strength, removal_method, current_session, use_transparent, bg_fill_rgb)
@@ -138,59 +140,62 @@ if uploaded_file is not None:
                 st.download_button("💾 Download Image", f, f"processed_image.{img_format.lower()}", "image/png")
 
         elif mode in ["Video", "PNG Frames"]:
-            with open("temp_run.mp4", "wb") as f: f.write(uploaded_file.getvalue())
+            with open("temp_run.mp4", "wb") as f:
+                f.write(uploaded_file.getvalue())
             cap = cv2.VideoCapture("temp_run.mp4")
             fps = cap.get(cv2.CAP_PROP_FPS)
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
             zip_buffer = io.BytesIO() if mode == "PNG Frames" else None
             out = None
-            
+
             if mode == "Video":
                 ext = "mov" if use_transparent else "mp4"
                 result_filename = f"result_video.{ext}"
-                fourcc = cv2.VideoWriter_fourcc(*'png ') if use_transparent else cv2.VideoWriter_fourcc(*'mp4v')
+                fourcc = cv2.VideoWriter_fourcc('png ') if use_transparent else cv2.VideoWriter_fourcc('mp4v')
                 out = cv2.VideoWriter(result_filename, fourcc, fps, (width, height))
-            
+
             p_col1, p_col2 = st.columns(2)
             orig_placeholder = p_col1.empty()
             proc_placeholder = p_col2.empty()
             prog = st.progress(0)
 
-            # Context manager for the zip file creation
-            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) if mode == "PNG Frames" else io.BytesIO() as zip_file:
-                count = 0
-                while cap.isOpened():
-                    ret, frame = cap.read()
-                    if not ret: break
-                    
-                    pil_f = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                    final = process_frame(pil_f, st.session_state.picked_color, sensitivity, d_strength, removal_method, current_session, use_transparent, bg_fill_rgb)
-                    
-                    if mode == "Video":
-                        if use_transparent:
-                            out.write(cv2.cvtColor(np.array(final), cv2.COLOR_RGBA2BGRA))
-                        else:
-                            out.write(cv2.cvtColor(np.array(final), cv2.COLOR_RGB2BGR))
+            count = 0
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                pil_f = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                final = process_frame(pil_f, st.session_state.picked_color, sensitivity, d_strength, removal_method, current_session, use_transparent, bg_fill_rgb)
+
+                if mode == "Video":
+                    if use_transparent:
+                        out.write(cv2.cvtColor(np.array(final), cv2.COLOR_RGBA2BGRA))
                     else:
-                        # Process PNG Frames mode
-                        buf = io.BytesIO()
-                        final.save(buf, format="PNG")
+                        out.write(cv2.cvtColor(np.array(final), cv2.COLOR_RGB2BGR))
+                elif mode == "PNG Frames":
+                    buf = io.BytesIO()
+                    final.save(buf, format="PNG")
+                    buf.seek(0)
+                    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, True) as zip_file:
                         zip_file.writestr(f"frame_{count:04d}.png", buf.getvalue())
 
-                    orig_placeholder.image(frame, channels="BGR")
-                    proc_placeholder.image(np.array(apply_checkerboard(final) if use_transparent else final))
-                    count += 1
-                    prog.progress(min(count/frame_count, 1.0))
+                orig_placeholder.image(frame, channels="BGR")
+                proc_placeholder.image(np.array(apply_checkerboard(final) if use_transparent else final))
+                count += 1
+                prog.progress(min(count / frame_count, 1.0))
 
             cap.release()
-            if out: out.release()
+            if out:
+                out.release()
             st.success("✅ Complete!")
 
             if mode == "Video":
                 with open(result_filename, "rb") as f:
                     st.download_button("💾 Download Processed Video", f, result_filename, "video/quicktime" if use_transparent else "video/mp4")
-            else:
+            elif mode == "PNG Frames":
                 zip_buffer.seek(0)
                 st.download_button("💾 Download PNG Frames (ZIP)", zip_buffer, "frame_sequence.zip", "application/zip")
